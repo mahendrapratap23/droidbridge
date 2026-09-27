@@ -6,6 +6,14 @@ Universal Android-to-macOS file transfer over USB. Open source. No cloud, no Wi-
 
 DroidBridge connects to **any MTP-compatible Android phone** (Samsung, Google Pixel, OnePlus, Xiaomi, Redmi, Vivo, Oppo, Motorola, Nothing, and more) via USB and lets you browse, download, upload, and delete files with a native macOS interface.
 
+## Download
+
+Download the latest release for macOS directly from GitHub Releases:
+
+👉 **[Download DroidBridge for macOS (Latest Release)](https://github.com/mahendrapratap23/droidbridge/releases/latest)**
+
+*Supports Apple Silicon (M1/M2/M3/M4) and Intel Macs running macOS 11.0 or newer.*
+
 ## How it works
 
 - **USB device discovery** via [nusb](https://crates.io/crates/nusb) (pure Rust, no libusb)
