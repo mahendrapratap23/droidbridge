@@ -5,8 +5,8 @@
  * never calls `invoke()` directly.
  */
 
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /* ── Device discovery ────────────────────────────────────────── */
 

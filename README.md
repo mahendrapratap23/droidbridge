@@ -44,18 +44,32 @@ Download the ready-to-run macOS app installer directly from GitHub Releases:
 
 | Package | Format | Architecture | Size | Link |
 | :--- | :--- | :--- | :--- | :--- |
-| **macOS Disk Image** | `.dmg` | Apple Silicon (M1/M2/M3/M4) | ~4.3 MB | [**Download DroidBridge DMG**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-aarch64.dmg) |
-| **Standalone Archive** | `.zip` | Apple Silicon (M1/M2/M3/M4) | ~3.9 MB | [**Download DroidBridge Zip**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-macos-aarch64.zip) |
+| **Universal Disk Image** *(Recommended)* | `.dmg` | Apple Silicon & Intel (All Macs) | ~7.8 MB | [**Download Universal DMG**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-universal.dmg) |
+| **Apple Silicon DMG** | `.dmg` | Apple Silicon (M1/M2/M3/M4) | ~4.0 MB | [**Download Apple Silicon DMG**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-aarch64.dmg) |
+| **Universal Zip Archive** | `.zip` | Apple Silicon & Intel (All Macs) | ~7.7 MB | [**Download Universal Zip**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-macos-universal.zip) |
+| **Apple Silicon Zip** | `.zip` | Apple Silicon (M1/M2/M3/M4) | ~3.9 MB | [**Download Apple Silicon Zip**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-macos-aarch64.zip) |
 
-> 💡 **Looking for all releases or Intel builds?** Visit the [**Releases Page**](https://github.com/mahendrapratap23/droidbridge/releases).
+> 💡 **Looking for all versions?** Visit the [**GitHub Releases Page**](https://github.com/mahendrapratap23/droidbridge/releases).
 
-### Installation in 3 Steps
-1. Download [**`DroidBridge-0.1.0-aarch64.dmg`**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-aarch64.dmg).
+### 🚀 Getting Started in 3 Steps
+1. Download [**`DroidBridge-0.1.0-universal.dmg`**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-universal.dmg).
 2. Open the `.dmg` and drag **DroidBridge** into your **Applications** folder.
-3. Plug in your Android phone via USB cable and switch the USB connection mode on your phone to **File Transfer (MTP)**.
-4. Launch DroidBridge and click **Scan for Devices**.
+3. Plug in your Android phone via USB cable and set the phone's USB mode to **File Transfer (MTP)**.
+4. Launch DroidBridge and browse or transfer your files!
 
-> ℹ️ *Note for macOS Gatekeeper:* If macOS flags the app because it isn't notarized yet with Apple Developer ID, run `xattr -cr /Applications/DroidBridge.app` or right-click the app in Finder and choose **Open**.
+> [!IMPORTANT]
+> ### 🛡️ macOS Gatekeeper ("App is damaged" or blocked from opening)
+> Since DroidBridge is open-source and not signed with a paid Apple Developer certificate, macOS Gatekeeper automatically places downloaded files in quarantine.
+>
+> If macOS says **"DroidBridge is damaged and can't be opened"** or prevents it from running:
+> 1. Open **Terminal** (press `⌘ Space`, type `Terminal`, press Enter).
+> 2. Run this command:
+>    ```bash
+>    xattr -cr /Applications/DroidBridge.app
+>    ```
+> 3. Launch DroidBridge again — it will open immediately!
+> 
+> *Alternatively:* In Finder, go to **Applications**, right-click **DroidBridge**, hold `Option`, and click **Open**.
 
 ---
 

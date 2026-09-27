@@ -164,3 +164,15 @@ pub fn find_mtp_endpoints(
         "No MTP interface with bulk endpoints found".into(),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scan_mtp_devices_does_not_panic() {
+        let res = scan_mtp_devices();
+        assert!(res.is_ok(), "scan_mtp_devices should succeed: {:?}", res.err());
+    }
+}
+

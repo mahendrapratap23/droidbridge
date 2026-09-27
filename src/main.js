@@ -7,6 +7,7 @@
 
 import * as api from "./modules/api.js";
 import * as ui from "./modules/ui.js";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 /* ── Application state ───────────────────────────────────────── */
 
@@ -236,8 +237,7 @@ async function handleDownload() {
 
   // Use Tauri dialog to pick save directory
   try {
-    const { open } = window.__TAURI__.dialog;
-    const destPath = await open({ directory: true, title: "Save files to…" });
+    const destPath = await openDialog({ directory: true, title: "Save files to…" });
     if (!destPath) return;
 
     const handles = Array.from(state.selectedHandles);
@@ -252,8 +252,7 @@ async function handleUpload() {
   if (!state.connectedDeviceId || !state.activeStorageId) return;
 
   try {
-    const { open } = window.__TAURI__.dialog;
-    const filePaths = await open({ multiple: true, title: "Select files to upload" });
+    const filePaths = await openDialog({ multiple: true, title: "Select files to upload" });
     if (!filePaths || filePaths.length === 0) return;
 
     const parentHandle = state.pathStack[state.pathStack.length - 1].handle;
