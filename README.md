@@ -1,159 +1,245 @@
-# DroidBridge
+<p align="center">
+  <img src="app-icon.svg" width="128" height="128" alt="DroidBridge Logo" />
+</p>
 
-Universal Android-to-macOS file transfer over USB. Open source. No cloud, no Wi-Fi, no Bluetooth — just a USB cable.
+<h1 align="center">DroidBridge</h1>
 
-## What it does
+<p align="center">
+  <strong>Universal Android-to-macOS file transfer over USB.</strong><br>
+  No Wi-Fi. No Bluetooth. No Cloud. No Ads. Pure Rust and native speed.
+</p>
 
-DroidBridge connects to **any MTP-compatible Android phone** (Samsung, Google Pixel, OnePlus, Xiaomi, Redmi, Vivo, Oppo, Motorola, Nothing, and more) via USB and lets you browse, download, upload, and delete files with a native macOS interface.
+<p align="center">
+  <a href="https://github.com/mahendrapratap23/droidbridge/releases/latest">
+    <img src="https://img.shields.io/github/v/release/mahendrapratap23/droidbridge?color=3DDC84&label=Latest%20Release&logo=apple&logoColor=white" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/mahendrapratap23/droidbridge/releases">
+    <img src="https://img.shields.io/badge/Platform-macOS%2011%2B%20(Apple%20Silicon%20%7C%20Intel)-1e2430?logo=apple&logoColor=white" alt="macOS Platform" />
+  </a>
+  <a href="https://v2.tauri.app/">
+    <img src="https://img.shields.io/badge/Tauri-v2-24C8D8?logo=tauri&logoColor=white" alt="Tauri 2" />
+  </a>
+  <a href="https://www.rust-lang.org/">
+    <img src="https://img.shields.io/badge/Backend-Pure%20Rust%20(nusb)-DEA584?logo=rust&logoColor=white" alt="Rust" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
+  </a>
+</p>
 
-## Download
+<p align="center">
+  <a href="#-quick-download"><strong>Quick Download</strong></a> •
+  <a href="#-why-droidbridge"><strong>Why DroidBridge?</strong></a> •
+  <a href="#-features"><strong>Features</strong></a> •
+  <a href="#-device-compatibility"><strong>Compatibility</strong></a> •
+  <a href="#-architecture"><strong>Architecture</strong></a> •
+  <a href="#-development"><strong>Development</strong></a>
+</p>
 
-Download the latest release for macOS directly from GitHub Releases:
+---
 
-👉 **[Download DroidBridge for macOS (Latest Release)](https://github.com/mahendrapratap23/droidbridge/releases/latest)**
+## ⚡ Quick Download
 
-*Supports Apple Silicon (M1/M2/M3/M4) and Intel Macs running macOS 11.0 or newer.*
+Download the ready-to-run macOS app installer directly from GitHub Releases:
 
-## How it works
+| Package | Format | Architecture | Size | Link |
+| :--- | :--- | :--- | :--- | :--- |
+| **macOS Disk Image** | `.dmg` | Apple Silicon (M1/M2/M3/M4) | ~4.3 MB | [**Download DroidBridge DMG**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-aarch64.dmg) |
+| **Standalone Archive** | `.zip` | Apple Silicon (M1/M2/M3/M4) | ~3.9 MB | [**Download DroidBridge Zip**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-macos-aarch64.zip) |
 
-- **USB device discovery** via [nusb](https://crates.io/crates/nusb) (pure Rust, no libusb)
-- **MTP protocol** implemented directly on top of PTP/USB bulk transport
-- **Desktop app** built with [Tauri 2](https://v2.tauri.app/) (Rust backend + web frontend)
-- **UI** in vanilla HTML, CSS, and JavaScript — no framework overhead
+> 💡 **Looking for all releases or Intel builds?** Visit the [**Releases Page**](https://github.com/mahendrapratap23/droidbridge/releases).
 
-Device detection is based on USB interface class codes (PTP class `0x06` and vendor-specific MTP `0xFF/0x01/0x01`), **not** on hardcoded vendor or product IDs. Any standards-compliant MTP device will work.
+### Installation in 3 Steps
+1. Download [**`DroidBridge-0.1.0-aarch64.dmg`**](https://github.com/mahendrapratap23/droidbridge/releases/download/v0.1.0/DroidBridge-0.1.0-aarch64.dmg).
+2. Open the `.dmg` and drag **DroidBridge** into your **Applications** folder.
+3. Plug in your Android phone via USB cable and switch the USB connection mode on your phone to **File Transfer (MTP)**.
+4. Launch DroidBridge and click **Scan for Devices**.
 
-## Features
+> ℹ️ *Note for macOS Gatekeeper:* If macOS flags the app because it isn't notarized yet with Apple Developer ID, run `xattr -cr /Applications/DroidBridge.app` or right-click the app in Finder and choose **Open**.
 
-- [x] USB device scanning and identification
-- [x] MTP session management (open / close)
-- [x] Storage volume listing
-- [x] Folder browsing with breadcrumb navigation
-- [x] File download to macOS
-- [x] File upload from macOS
-- [x] File deletion on device
-- [x] Transfer progress reporting
-- [x] Transfer cancellation
-- [x] Keyboard shortcuts (⌘A select all, Backspace navigate back, Escape deselect)
-- [ ] Drag-and-drop transfers
-- [ ] USB hotplug detection (currently requires manual scan)
-- [ ] Folder download/upload (recursive)
+---
 
-## Project status
+## 🎯 Why DroidBridge?
 
-> **Early development.** The MTP protocol implementation is complete but has not yet been tested end-to-end with a physical Android device. USB device discovery works immediately. The UI is fully functional as a scaffold.
+Mac users connecting Android devices historically faced broken tools: Google's official *Android File Transfer* was abandoned years ago, while third-party alternatives often bundle adware, background daemons, or force subscription paywalls.
 
-## Prerequisites
+DroidBridge is built on three core tenets:
 
-- **macOS** 11.0+ (Apple Silicon or Intel)
-- **Rust** 1.70+ ([install](https://rustup.rs/))
-- **Node.js** 20+ ([install](https://nodejs.org/))
+* 🛡️ **Zero C Dependencies (100% Pure Rust)** — Uses `nusb` for raw USB bulk I/O directly via macOS IOKit. No Homebrew `libusb`, no `libmtp` FFI crashes.
+* ⚡ **Ultra Lightweight** — Native macOS shell via Tauri 2 and vanilla HTML/CSS/JS frontend. Weighs under 5 MB with instantaneous launch and minimal RAM usage.
+* 🔌 **Hardware Agnostic** — Dynamic USB class code scanning (`0x06` PTP and `0xFF/0x01/0x01` MTP). Works with any Android manufacturer without hardcoding vendor IDs.
+* 🔒 **Air-gapped & Private** — 100% offline. Zero network calls, zero analytics, zero cloud syncing. Only electrons through your USB cable.
 
-## Getting started
+---
+
+## ✨ Features
+
+- [x] **Universal Device Detection** — Detects any MTP-compliant phone on USB connection
+- [x] **Multiple Storage Volume Support** — Internal Shared Storage, MicroSD Cards, USB OTG drives
+- [x] **Fast Hierarchical Browsing** — Interactive breadcrumb bar and sorted directory view
+- [x] **Bidirectional Transfers** — Download files from phone to Mac; upload files from Mac to phone
+- [x] **Progress & Cancellation** — Live byte streaming progress reporting with instant transfer abort
+- [x] **Object Deletion** — Delete files and cleanup storage directly from your Mac
+- [x] **macOS Native Aesthetics** — Refined dark mode, SF-styled spacing, hover states, and smooth typography
+- [x] **Keyboard Shortcuts** — Finder-like ergonomics:
+  - `⌘A` — Select all files in directory
+  - `Backspace` / `Delete` — Navigate back to parent folder
+  - `Escape` — Clear selection / dismiss modals
+
+---
+
+## 📱 Device Compatibility
+
+DroidBridge detects devices at the USB protocol layer (USB Still Image class `0x06` and Vendor-specific MTP `0xFF/0x01/0x01`), guaranteeing broad compatibility across manufacturers:
+
+<p align="center">
+  <b>Google Pixel</b> • <b>Samsung Galaxy</b> • <b>OnePlus</b> • <b>Xiaomi / Redmi / POCO</b><br>
+  <b>Motorola</b> • <b>Nothing Phone</b> • <b>Oppo / Vivo / Realme</b> • <b>Sony Xperia</b>
+</p>
+
+---
+
+## 🏗️ Architecture
+
+DroidBridge decouples the UI from the protocol implementation using Tauri 2's secure IPC bridge:
+
+```mermaid
+graph TD
+    subgraph UI ["Frontend (Vanilla HTML / CSS / JS)"]
+        A["Toolbar & Breadcrumbs"]
+        B["File Table Browser"]
+        C["Transfer Progress Panel"]
+    end
+
+    subgraph Tauri ["Tauri 2 IPC Bridge"]
+        D["Commands: scan_devices, list_files, download, upload"]
+        E["Events: transfer-progress, transfer-complete"]
+    end
+
+    subgraph Backend ["Rust Backend (Core Engine)"]
+        F["Device Manager"]
+        G["MTP Session & PTP Wire Framing"]
+        H["Chunked Streaming Engine"]
+        I["nusb (Pure-Rust macOS IOKit USB)"]
+    end
+
+    subgraph Hardware ["Hardware Layer"]
+        J["USB-C / USB-A Data Cable"]
+        K["Android Device (MTP Mode)"]
+    end
+
+    UI -->|Invoke| Tauri
+    Tauri -->|Dispatch| Backend
+    Backend -->|Stream Events| Tauri
+    Tauri -->|Update DOM| UI
+    Backend --> I
+    I --> J
+    J --> K
+```
+
+---
+
+## 📦 Project Layout
+
+```text
+droidbridge/
+├── .github/workflows/         # CI/CD automation (macOS DMG builds on tag)
+│   └── release.yml
+├── index.html                 # Semantic macOS UI shell
+├── src/                       # Vanilla web frontend
+│   ├── main.js                # State machine & keyboard shortcuts
+│   ├── modules/
+│   │   ├── api.js             # Tauri IPC invoke wrappers
+│   │   └── ui.js              # DOM renderers (table, breadcrumbs, sidebar)
+│   └── styles/
+│       └── index.css          # Design system & dark-mode styling
+├── src-tauri/                 # Rust core backend
+│   ├── Cargo.toml             # Rust dependencies (nusb, tauri, tokio)
+│   ├── tauri.conf.json        # Tauri 2 app config & window styling
+│   └── src/
+│       ├── main.rs            # Application entrypoint
+│       ├── lib.rs             # Tauri builder setup & command registration
+│       ├── commands.rs        # IPC command handlers
+│       ├── state.rs           # Thread-safe session & cancellation state
+│       └── mtp/
+│           ├── mod.rs         # Module exports
+│           ├── device.rs      # Pure-Rust USB device discovery
+│           ├── session.rs     # MTP session lifecycle & bulk endpoints
+│           ├── protocol.rs    # PTP wire framing, codecs & unit tests
+│           ├── transfer.rs    # Chunked download/upload engine
+│           └── types.rs       # Shared data models
+├── app-icon.svg               # Vector app icon
+├── LICENSE                    # MIT License
+└── README.md
+```
+
+---
+
+## 🛠️ Development & Building from Source
+
+### Prerequisites
+- **macOS** 11.0 Big Sur or later (Apple Silicon or Intel)
+- **Rust** 1.70+ ([rustup.rs](https://rustup.rs/))
+- **Node.js** 20+ ([nodejs.org](https://nodejs.org/))
+
+### Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/YOUR_USERNAME/droidbridge.git
+# 1. Clone the repository
+git clone https://github.com/mahendrapratap23/droidbridge.git
 cd droidbridge
 
-# Install frontend dependencies
+# 2. Install frontend dependencies
 npm install
 
-# Run in development mode
+# 3. Run in development mode (hot reloading)
 npm run tauri dev
 ```
 
-The first build will compile all Rust dependencies (~2-3 minutes). Subsequent builds are fast.
+### Running Tests
 
-## Project structure
-
-```
-droidbridge/
-├── index.html                  # App shell
-├── src/
-│   ├── main.js                 # State management + event wiring
-│   ├── modules/
-│   │   ├── api.js              # Tauri IPC wrappers
-│   │   └── ui.js               # DOM rendering functions
-│   └── styles/
-│       └── index.css           # Design system (dark mode, macOS-native)
-├── src-tauri/
-│   ├── Cargo.toml              # Rust dependencies
-│   ├── tauri.conf.json         # Tauri config
-│   ├── capabilities/
-│   │   └── default.json        # Permission grants
-│   └── src/
-│       ├── main.rs             # Entry point
-│       ├── lib.rs              # Plugin + command registration
-│       ├── commands.rs         # Tauri command handlers
-│       ├── state.rs            # Shared app state
-│       └── mtp/
-│           ├── mod.rs          # Module root
-│           ├── protocol.rs     # PTP/MTP wire format + opcodes
-│           ├── device.rs       # USB device discovery (nusb)
-│           ├── session.rs      # MTP session + operations
-│           ├── transfer.rs     # Download/upload with progress
-│           └── types.rs        # Shared data types
-├── README.md
-├── LICENSE
-└── .gitignore
+```bash
+# Run unit tests for PTP wire framing & codecs
+cd src-tauri
+cargo test
 ```
 
-## Architecture
+### Building Release Bundles
 
-```
-┌─────────────────────────────────┐
-│   Vanilla HTML/CSS/JS Frontend  │
-│   (Tauri WebView)               │
-└─────────┬───────────────────────┘
-          │ Tauri IPC (invoke / events)
-┌─────────▼───────────────────────┐
-│   Tauri Commands (Rust)         │
-│   commands.rs                   │
-└─────────┬───────────────────────┘
-          │
-┌─────────▼───────────────────────┐
-│   MTP Protocol Layer            │
-│   PTP containers over USB bulk  │
-│   session.rs + protocol.rs      │
-└─────────┬───────────────────────┘
-          │
-┌─────────▼───────────────────────┐
-│   nusb (pure Rust USB)          │
-│   Device discovery + I/O        │
-└─────────┬───────────────────────┘
-          │
-      USB Cable
-          │
-    Android Phone
+```bash
+# Compile optimized frontend & Rust binary
+npm run build
+npm run tauri build
 ```
 
-## Dependencies and licenses
+---
 
-| Crate | Version | License | Purpose |
-|-------|---------|---------|---------|
-| [tauri](https://crates.io/crates/tauri) | 2.x | MIT/Apache-2.0 | Desktop app framework |
-| [nusb](https://crates.io/crates/nusb) | 0.2.x | Apache-2.0/MIT | Pure-Rust USB access |
-| [serde](https://crates.io/crates/serde) | 1.x | MIT/Apache-2.0 | Serialisation |
-| [tokio](https://crates.io/crates/tokio) | 1.x | MIT | Async runtime |
-| [thiserror](https://crates.io/crates/thiserror) | 2.x | MIT/Apache-2.0 | Error types |
-| [uuid](https://crates.io/crates/uuid) | 1.x | MIT/Apache-2.0 | Transfer IDs |
-| [log](https://crates.io/crates/log) | 0.4.x | MIT/Apache-2.0 | Logging facade |
-| [env_logger](https://crates.io/crates/env_logger) | 0.11.x | MIT/Apache-2.0 | Log output |
-| [vite](https://www.npmjs.com/package/vite) | 6.x | MIT | Frontend dev server |
+## 📜 Dependencies & Licensing
 
-All dependencies are MIT or Apache-2.0 licensed. **No C dependencies** — the entire stack is pure Rust and JavaScript.
+DroidBridge uses strictly permissive, open-source dependencies (MIT and Apache-2.0):
 
-## Contributing
+| Component | Role | License |
+| :--- | :--- | :--- |
+| [**Tauri 2**](https://github.com/tauri-apps/tauri) | Native desktop shell & IPC | MIT / Apache-2.0 |
+| [**nusb**](https://github.com/kevinmehall/nusb) | Pure-Rust async USB stack | MIT / Apache-2.0 |
+| [**tokio**](https://github.com/tokio-rs/tokio) | Async runtime | MIT |
+| [**serde**](https://github.com/serde-rs/serde) | Data serialization | MIT / Apache-2.0 |
+| [**thiserror**](https://github.com/dtolnay/thiserror) | Ergonomic error handling | MIT / Apache-2.0 |
+| [**uuid**](https://github.com/uuid-rs/uuid) | Transfer session identifiers | MIT / Apache-2.0 |
 
-Contributions welcome. Please open an issue before starting major work.
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run `cargo test` and `cargo clippy`
-5. Open a pull request
+## 🤝 Contributing
 
-## License
+Contributions, bug reports, and device test feedback are welcome!
+1. Fork the repo and create your branch (`git checkout -b feature/cool-feature`).
+2. Run tests to verify: `cd src-tauri && cargo test`.
+3. Commit your changes (`git commit -m 'feat: add support for ...'`).
+4. Push to your branch and submit a Pull Request.
 
-[MIT](LICENSE)
+---
+
+## 📄 License
+
+Distributed under the [MIT License](LICENSE).
+Copyright (c) 2026 DroidBridge Contributors.
