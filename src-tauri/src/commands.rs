@@ -26,16 +26,13 @@ pub fn scan_devices() -> Result<Vec<DeviceInfo>, String> {
 
 #[tauri::command]
 pub fn connect_device(device_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    // Parse vendor:product from device_id (format: "vid:pid:bus")
-    let parts: Vec<&str> = device_id.split(':').collect();
-    if parts.len() < 2 {
-        return Err("Invalid device ID format".into());
-    }
+    // Open the USB device and claim MTP interface in one shot
+    let opened = device::open_mtp_device(&device_id)
+        .map_err(|e| format!("Failed to open USB device: {}", e))?;
 
-    let vid = u16::from_str_radix(parts[0], 16).map_err(|e| e.to_string())?;
-    let pid = u16::from_str_radix(parts[1], 16).map_err(|e| e.to_string())?;
-
-    let session = MtpSession::open(vid, pid).map_err(|e| e.to_string())?;
+    // Open MTP session using the pre-claimed interface/endpoints
+    let session = MtpSession::open(opened)
+        .map_err(|e| format!("Failed to open MTP session: {}", e))?;
 
     let mut sessions = state.sessions.lock().map_err(|e| e.to_string())?;
     sessions.insert(device_id, session);
@@ -146,7 +143,6 @@ pub fn download_files(
         };
 
         let app_clone = app.clone();
-        let tid_for_progress = transfer_id.clone();
         let progress_cb = move |p: TransferProgress| {
             let _ = app_clone.emit("transfer-progress", &p);
         };
@@ -156,7 +152,7 @@ pub fn download_files(
             *handle,
             &info.name,
             &dest,
-            &tid_for_progress,
+            &transfer_id,
             &cancel_flag,
             &progress_cb,
         )

@@ -3,12 +3,7 @@
 //! Wraps the low-level `MtpSession` operations to add:
 //! - Progress callbacks (bytes transferred / total)
 //! - Cancellation via a shared flag
-//! - Error recovery on USB stalls (clear endpoint, retry once)
-//!
-//! ## Status
-//!
-//! Implemented against the MTP specification. Requires a physical
-//! Android device connected via USB for end-to-end testing.
+//! - Proper error wrapping
 
 use std::fs;
 use std::path::Path;
@@ -34,6 +29,7 @@ pub fn download_file(
         return Err(MtpError::Cancelled);
     }
 
+    // Emit initial progress
     on_progress(TransferProgress {
         transfer_id: transfer_id.to_string(),
         file_name: file_name.to_string(),
@@ -43,16 +39,18 @@ pub fn download_file(
         total_bytes: 0,
     });
 
-    // Get the object data
+    // Get the object data via MTP
     let data = session.get_object(handle)?;
 
     if cancel_flag() {
         return Err(MtpError::Cancelled);
     }
 
+    // Write to disk
     let dest_path = dest_dir.join(file_name);
     fs::write(&dest_path, &data)?;
 
+    // Emit completion progress
     on_progress(TransferProgress {
         transfer_id: transfer_id.to_string(),
         file_name: file_name.to_string(),
@@ -90,6 +88,7 @@ pub fn upload_file(
     let data = fs::read(file_path)?;
     let total = data.len() as u64;
 
+    // Emit initial progress
     on_progress(TransferProgress {
         transfer_id: transfer_id.to_string(),
         file_name: file_name.to_string(),
@@ -103,8 +102,10 @@ pub fn upload_file(
         return Err(MtpError::Cancelled);
     }
 
+    // Send file via MTP
     let handle = session.send_object(storage_id, parent_handle, file_name, &data)?;
 
+    // Emit completion progress
     on_progress(TransferProgress {
         transfer_id: transfer_id.to_string(),
         file_name: file_name.to_string(),

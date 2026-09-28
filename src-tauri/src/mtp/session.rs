@@ -5,17 +5,19 @@
 //! transaction ID. All I/O goes through bulk USB endpoints using the
 //! PTP container format defined in `protocol.rs`.
 //!
-//! ## Status
+//! ## Implementation Notes
 //!
-//! This is a real MTP protocol implementation built on `nusb`. It has
-//! been written against the PTP/MTP specification but **has not yet
-//! been tested with a physical device**. The USB discovery layer works
-//! immediately; the session and transfer layers require a connected
-//! Android phone for end-to-end validation.
+//! - Single-open design: the device is opened once in `device::open_mtp_device`
+//!   and the handles are transferred here. No double-open issues.
+//! - Handles `RC_SESSION_ALREADY_OPEN` gracefully by closing and reopening.
+//! - Robust data+response parsing handles devices that pack response right
+//!   after data in the same USB transfer.
+//! - Stall recovery via `clear_halt` + retry.
 
 use nusb::transfer::{Bulk, In, Out};
 use nusb::{Endpoint, MaybeFuture};
 
+use super::device::OpenedMtpDevice;
 use super::protocol::*;
 use super::types::*;
 
@@ -24,7 +26,11 @@ use std::time::Duration;
 /// Maximum USB bulk transfer size (64 KB).
 const BULK_TRANSFER_SIZE: usize = 64 * 1024;
 /// USB transfer timeout.
-const TIMEOUT: Duration = Duration::from_secs(5);
+const TIMEOUT: Duration = Duration::from_secs(10);
+/// Extended timeout for large data transfers.
+const DATA_TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum retries on stall.
+const MAX_STALL_RETRIES: u32 = 2;
 
 /// An active MTP session on a USB device.
 pub struct MtpSession {
@@ -43,53 +49,32 @@ pub struct MtpSession {
 impl MtpSession {
     /// Open a new MTP session on the given USB device.
     ///
-    /// Claims the MTP interface, opens typed bulk endpoints, then
-    /// sends an `OpenSession` command.
-    pub fn open(vid: u16, pid: u16) -> Result<Self, MtpError> {
-        let (iface_num, ep_out_addr, ep_in_addr) =
-            super::device::find_mtp_endpoints(vid, pid)?;
-
-        // Re-open the device and claim the interface
-        let device_list = nusb::list_devices()
-            .wait()
-            .map_err(|e| MtpError::Usb(e.to_string()))?;
-        let dev_info = device_list
-            .into_iter()
-            .find(|d| d.vendor_id() == vid && d.product_id() == pid)
-            .ok_or_else(|| {
-                MtpError::DeviceNotFound(format!("{:04x}:{:04x}", vid, pid))
-            })?;
-
-        let device = dev_info
-            .open()
-            .wait()
-            .map_err(|e| MtpError::Usb(e.to_string()))?;
-        let interface = device
-            .claim_interface(iface_num)
-            .wait()
-            .map_err(|e| MtpError::Usb(e.to_string()))?;
-
-        // Open typed bulk endpoints
-        let ep_out: Endpoint<Bulk, Out> = interface
-            .endpoint(ep_out_addr)
-            .map_err(|e| MtpError::Usb(e.to_string()))?;
-
-        let ep_in: Endpoint<Bulk, In> = interface
-            .endpoint(ep_in_addr)
-            .map_err(|e| MtpError::Usb(e.to_string()))?;
-
+    /// Uses the pre-opened device handles from `device::open_mtp_device`.
+    pub fn open(opened: OpenedMtpDevice) -> Result<Self, MtpError> {
         let mut session = MtpSession {
-            ep_out,
-            ep_in,
-            _interface: interface,
+            ep_out: opened.ep_out,
+            ep_in: opened.ep_in,
+            _interface: opened.interface,
             _session_id: 1,
             transaction_id: 0,
         };
 
         // Send OpenSession command
-        session.execute_command(OP_OPEN_SESSION, &[1])?;
+        match session.execute_command(OP_OPEN_SESSION, &[1]) {
+            Ok(_) => {
+                log::info!("MTP session opened successfully");
+            }
+            Err(MtpError::Protocol(code)) if code == RC_SESSION_ALREADY_OPEN => {
+                // Session already open — close it and reopen
+                log::warn!("Session already open (0x{:04X}), closing and reopening", code);
+                let _ = session.execute_command(OP_CLOSE_SESSION, &[]);
+                session.transaction_id = 0;
+                session.execute_command(OP_OPEN_SESSION, &[1])?;
+                log::info!("MTP session reopened successfully");
+            }
+            Err(e) => return Err(e),
+        }
 
-        log::info!("MTP session opened for {:04x}:{:04x}", vid, pid);
         Ok(session)
     }
 
@@ -106,6 +91,60 @@ impl MtpSession {
         self.transaction_id
     }
 
+    // ── Low-level USB I/O ───────────────────────────────────────
+
+    /// Write bytes to the bulk-out endpoint with stall recovery.
+    fn bulk_write(&mut self, data: &[u8]) -> Result<(), MtpError> {
+        self.bulk_write_inner(data, 0)
+    }
+
+    fn bulk_write_inner(&mut self, data: &[u8], retry: u32) -> Result<(), MtpError> {
+        let buf = nusb::transfer::Buffer::from(data);
+        let completion = self.ep_out.transfer_blocking(buf, TIMEOUT);
+
+        match completion.status {
+            Ok(()) => Ok(()),
+            Err(nusb::transfer::TransferError::Stall) if retry < MAX_STALL_RETRIES => {
+                log::warn!("OUT endpoint stalled, clearing halt (retry {})", retry + 1);
+                self.ep_out
+                    .clear_halt()
+                    .wait()
+                    .map_err(|e| MtpError::Usb(format!("clear_halt OUT: {}", e)))?;
+                self.bulk_write_inner(data, retry + 1)
+            }
+            Err(e) => Err(MtpError::Usb(format!("bulk write: {}", e))),
+        }
+    }
+
+    /// Read from the bulk-in endpoint with stall recovery.
+    fn bulk_read(&mut self) -> Result<Vec<u8>, MtpError> {
+        self.bulk_read_with_timeout(TIMEOUT)
+    }
+
+    fn bulk_read_with_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, MtpError> {
+        self.bulk_read_inner(timeout, 0)
+    }
+
+    fn bulk_read_inner(&mut self, timeout: Duration, retry: u32) -> Result<Vec<u8>, MtpError> {
+        let buf = nusb::transfer::Buffer::new(BULK_TRANSFER_SIZE);
+        let completion = self.ep_in.transfer_blocking(buf, timeout);
+
+        match completion.status {
+            Ok(()) => Ok(completion.buffer.into_vec()),
+            Err(nusb::transfer::TransferError::Stall) if retry < MAX_STALL_RETRIES => {
+                log::warn!("IN endpoint stalled, clearing halt (retry {})", retry + 1);
+                self.ep_in
+                    .clear_halt()
+                    .wait()
+                    .map_err(|e| MtpError::Usb(format!("clear_halt IN: {}", e)))?;
+                self.bulk_read_inner(timeout, retry + 1)
+            }
+            Err(e) => Err(MtpError::Usb(format!("bulk read: {}", e))),
+        }
+    }
+
+    // ── Mid-level MTP transaction helpers ────────────────────────
+
     /// Send a command and read the response (no data phase).
     fn execute_command(
         &mut self,
@@ -119,6 +158,9 @@ impl MtpSession {
     }
 
     /// Send a command that expects a data-in phase, then read the response.
+    ///
+    /// Handles the case where the response is packed into the same USB
+    /// transfer as the tail of the data phase.
     fn execute_data_in(
         &mut self,
         opcode: u16,
@@ -128,11 +170,28 @@ impl MtpSession {
         let cmd = build_command(opcode, tid, params);
         self.bulk_write(&cmd)?;
 
-        // Read data phase
-        let data_payload = self.read_data()?;
+        // Read data phase — may contain response appended at the end
+        let (data_payload, trailing_bytes) = self.read_data_phase()?;
 
-        // Read response
-        let response = self.read_response()?;
+        // If there were trailing bytes after the data container, they may
+        // be the response container
+        let response = if trailing_bytes.len() >= HEADER_LEN {
+            parse_container(&trailing_bytes)?
+        } else {
+            // Response is in a separate USB transfer
+            self.read_response()?
+        };
+
+        if response.container_type != CONTAINER_RESPONSE {
+            return Err(MtpError::InvalidData(format!(
+                "expected response container after data, got type {}",
+                response.container_type
+            )));
+        }
+
+        if response.code != RC_OK {
+            return Err(MtpError::Protocol(response.code));
+        }
 
         Ok((data_payload, response))
     }
@@ -156,54 +215,80 @@ impl MtpSession {
         self.read_response()
     }
 
-    /// Write bytes to the bulk-out endpoint.
-    fn bulk_write(&mut self, data: &[u8]) -> Result<(), MtpError> {
-        let mut buf = nusb::transfer::Buffer::new(data.len());
-        buf.extend_from_slice(data);
-        let completion = self.ep_out.transfer_blocking(buf, TIMEOUT);
-        completion
-            .into_result()
-            .map_err(|e| MtpError::Usb(format!("bulk write: {:?}", e)))?;
-        Ok(())
-    }
-
-    /// Read from the bulk-in endpoint.
-    fn bulk_read(&mut self) -> Result<Vec<u8>, MtpError> {
-        let buf = nusb::transfer::Buffer::new(BULK_TRANSFER_SIZE);
-        let completion = self.ep_in.transfer_blocking(buf, TIMEOUT);
-        let completed = completion
-            .into_result()
-            .map_err(|e| MtpError::Usb(format!("bulk read: {:?}", e)))?;
-        Ok(completed.into_vec())
-    }
-
-    /// Read a data-phase container (may span multiple USB transfers).
-    fn read_data(&mut self) -> Result<Vec<u8>, MtpError> {
-        let first = self.bulk_read()?;
+    /// Read a data-phase container that may span multiple USB transfers.
+    ///
+    /// Returns `(payload, trailing_bytes)` where `trailing_bytes` contains
+    /// any bytes read past the end of the data container (which may be the
+    /// response container packed into the same transfer).
+    fn read_data_phase(&mut self) -> Result<(Vec<u8>, Vec<u8>), MtpError> {
+        let first = self.bulk_read_with_timeout(DATA_TIMEOUT)?;
         if first.len() < HEADER_LEN {
             return Err(MtpError::InvalidData("data container too short".into()));
+        }
+
+        let container_type = u16::from_le_bytes([first[4], first[5]]);
+        if container_type != CONTAINER_DATA {
+            return Err(MtpError::InvalidData(format!(
+                "expected data container (type 2), got type {}",
+                container_type
+            )));
         }
 
         let total_len =
             u32::from_le_bytes([first[0], first[1], first[2], first[3]]) as usize;
 
-        // Extract payload (skip 12-byte header)
-        let mut payload = Vec::with_capacity(total_len.saturating_sub(HEADER_LEN));
+        // Handle special case: total_len == 0xFFFFFFFF means unknown length
+        // (the device will send a ZLP to signal end)
+        let known_length = total_len != 0xFFFFFFFF;
+        let expected_payload = if known_length {
+            total_len.saturating_sub(HEADER_LEN)
+        } else {
+            0 // will grow dynamically
+        };
+
+        let mut payload = Vec::with_capacity(if known_length { expected_payload } else { BULK_TRANSFER_SIZE });
+        let mut trailing = Vec::new();
+
+        // Extract payload from first transfer (skip 12-byte header)
         if first.len() > HEADER_LEN {
-            payload.extend_from_slice(&first[HEADER_LEN..]);
+            if known_length && first.len() > total_len {
+                // First transfer contains data + trailing (possibly response)
+                payload.extend_from_slice(&first[HEADER_LEN..total_len]);
+                trailing.extend_from_slice(&first[total_len..]);
+            } else {
+                payload.extend_from_slice(&first[HEADER_LEN..]);
+            }
         }
 
-        // If the data spans multiple USB transfers, keep reading
-        while payload.len() + HEADER_LEN < total_len {
-            let chunk = self.bulk_read()?;
-            payload.extend_from_slice(&chunk);
+        if known_length {
+            // Keep reading until we have the full payload
+            while payload.len() < expected_payload {
+                let chunk = self.bulk_read_with_timeout(DATA_TIMEOUT)?;
+                let remaining = expected_payload - payload.len();
+                if chunk.len() > remaining {
+                    // This chunk contains end-of-data + trailing (response)
+                    payload.extend_from_slice(&chunk[..remaining]);
+                    trailing.extend_from_slice(&chunk[remaining..]);
+                } else {
+                    payload.extend_from_slice(&chunk);
+                }
+            }
+            payload.truncate(expected_payload);
+        } else {
+            // Unknown length — read until ZLP (zero-length packet) or short packet
+            loop {
+                let chunk = self.bulk_read_with_timeout(DATA_TIMEOUT)?;
+                if chunk.is_empty() {
+                    break; // ZLP signals end
+                }
+                payload.extend_from_slice(&chunk);
+                if chunk.len() < BULK_TRANSFER_SIZE {
+                    break; // Short packet signals end
+                }
+            }
         }
 
-        // Trim to exact size
-        let expected_payload = total_len.saturating_sub(HEADER_LEN);
-        payload.truncate(expected_payload);
-
-        Ok(payload)
+        Ok((payload, trailing))
     }
 
     /// Read a response container.
@@ -212,6 +297,24 @@ impl MtpSession {
         let container = parse_container(&raw)?;
 
         if container.container_type != CONTAINER_RESPONSE {
+            // Some devices send an event container before the response;
+            // skip events and keep reading
+            if container.container_type == CONTAINER_EVENT {
+                log::debug!("Received event (code 0x{:04X}), reading response", container.code);
+                let raw2 = self.bulk_read()?;
+                let resp = parse_container(&raw2)?;
+                if resp.container_type != CONTAINER_RESPONSE {
+                    return Err(MtpError::InvalidData(format!(
+                        "expected response container, got type {} after event",
+                        resp.container_type
+                    )));
+                }
+                if resp.code != RC_OK {
+                    return Err(MtpError::Protocol(resp.code));
+                }
+                return Ok(resp);
+            }
+
             return Err(MtpError::InvalidData(format!(
                 "expected response container, got type {}",
                 container.container_type
@@ -273,11 +376,13 @@ impl MtpSession {
         storage_id: u32,
         parent_handle: u32,
     ) -> Result<Vec<u32>, MtpError> {
+        // 0xFFFFFFFF means root folder in MTP
         let parent = if parent_handle == 0 {
             0xFFFFFFFFu32
         } else {
             parent_handle
         };
+        // Params: StorageID, ObjectFormatCode (0 = all), ParentObject
         let (data, _resp) =
             self.execute_data_in(OP_GET_OBJECT_HANDLES, &[storage_id, 0, parent])?;
         read_u32_array(&data, 0)
@@ -288,7 +393,7 @@ impl MtpSession {
         let (data, _resp) =
             self.execute_data_in(OP_GET_OBJECT_INFO, &[handle])?;
 
-        // ObjectInfo dataset layout:
+        // ObjectInfo dataset layout (offsets in bytes):
         //  0: u32  StorageID
         //  4: u16  ObjectFormat
         //  6: u16  ProtectionStatus
@@ -309,6 +414,7 @@ impl MtpSession {
         let size = read_u32(&data, 8).unwrap_or(0) as u64;
         let is_folder = format == FORMAT_ASSOCIATION;
 
+        // Parse the variable-length strings starting at offset 52
         let (name, name_len) = read_ptp_string(&data, 52)?;
         let date_offset = 52 + name_len;
         let (_date_created, dc_len) =
@@ -332,6 +438,8 @@ impl MtpSession {
     }
 
     /// Upload a file to the device.
+    ///
+    /// Returns the new object handle assigned by the device.
     pub fn send_object(
         &mut self,
         storage_id: u32,
@@ -341,25 +449,25 @@ impl MtpSession {
     ) -> Result<u32, MtpError> {
         // Build ObjectInfo dataset for SendObjectInfo
         let mut info = Vec::new();
-        info.extend_from_slice(&storage_id.to_le_bytes());
-        info.extend_from_slice(&0x3000u16.to_le_bytes()); // Undefined format
-        info.extend_from_slice(&0u16.to_le_bytes()); // ProtectionStatus
-        info.extend_from_slice(&(file_data.len() as u32).to_le_bytes());
-        info.extend_from_slice(&0u16.to_le_bytes()); // ThumbFormat
-        info.extend_from_slice(&0u32.to_le_bytes()); // ThumbCompressedSize
-        info.extend_from_slice(&0u32.to_le_bytes()); // ThumbPixWidth
-        info.extend_from_slice(&0u32.to_le_bytes()); // ThumbPixHeight
-        info.extend_from_slice(&0u32.to_le_bytes()); // ImagePixWidth
-        info.extend_from_slice(&0u32.to_le_bytes()); // ImagePixHeight
-        info.extend_from_slice(&0u32.to_le_bytes()); // ImageBitDepth
-        info.extend_from_slice(&parent_handle.to_le_bytes());
-        info.extend_from_slice(&0u16.to_le_bytes()); // AssociationType
-        info.extend_from_slice(&0u32.to_le_bytes()); // AssociationDesc
-        info.extend_from_slice(&0u32.to_le_bytes()); // SequenceNumber
-        info.extend(&encode_ptp_string(filename));
-        info.extend(&encode_ptp_string("")); // DateCreated
-        info.extend(&encode_ptp_string("")); // DateModified
-        info.extend(&encode_ptp_string("")); // Keywords
+        info.extend_from_slice(&storage_id.to_le_bytes());       // StorageID
+        info.extend_from_slice(&0x3000u16.to_le_bytes());        // ObjectFormat: Undefined
+        info.extend_from_slice(&0u16.to_le_bytes());             // ProtectionStatus
+        info.extend_from_slice(&(file_data.len() as u32).to_le_bytes()); // CompressedSize
+        info.extend_from_slice(&0u16.to_le_bytes());             // ThumbFormat
+        info.extend_from_slice(&0u32.to_le_bytes());             // ThumbCompressedSize
+        info.extend_from_slice(&0u32.to_le_bytes());             // ThumbPixWidth
+        info.extend_from_slice(&0u32.to_le_bytes());             // ThumbPixHeight
+        info.extend_from_slice(&0u32.to_le_bytes());             // ImagePixWidth
+        info.extend_from_slice(&0u32.to_le_bytes());             // ImagePixHeight
+        info.extend_from_slice(&0u32.to_le_bytes());             // ImageBitDepth
+        info.extend_from_slice(&parent_handle.to_le_bytes());    // ParentObject
+        info.extend_from_slice(&0u16.to_le_bytes());             // AssociationType
+        info.extend_from_slice(&0u32.to_le_bytes());             // AssociationDesc
+        info.extend_from_slice(&0u32.to_le_bytes());             // SequenceNumber
+        info.extend(&encode_ptp_string(filename));               // Filename
+        info.extend(&encode_ptp_string(""));                     // DateCreated
+        info.extend(&encode_ptp_string(""));                     // DateModified
+        info.extend(&encode_ptp_string(""));                     // Keywords
 
         let parent = if parent_handle == 0 {
             0xFFFFFFFFu32
@@ -369,6 +477,10 @@ impl MtpSession {
         let resp =
             self.execute_data_out(OP_SEND_OBJECT_INFO, &[storage_id, parent], &info)?;
 
+        // Response params for SendObjectInfo:
+        //   param1: StorageID used
+        //   param2: Parent handle used
+        //   param3: New object handle
         let new_handle = if resp.payload.len() >= 12 {
             read_u32(&resp.payload, 8)?
         } else {
@@ -384,6 +496,7 @@ impl MtpSession {
 
     /// Delete an object from the device.
     pub fn delete_object(&mut self, handle: u32) -> Result<(), MtpError> {
+        // Params: ObjectHandle, ObjectFormatCode (0 = regardless of format)
         self.execute_command(OP_DELETE_OBJECT, &[handle, 0])?;
         log::info!("Deleted object handle {}", handle);
         Ok(())
